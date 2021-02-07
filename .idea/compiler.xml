@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <option name="BUILD_PROCESS_HEAP_SIZE" value="1700" />
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="JDK13_SourceCode" options="--add-exports java.base/jdk.internal.access=ALL-UNNAMED --add-exports java.base/jdk.internal.util=ALL-UNNAMED --add-exports java.base/jdk.internal.misc=ALL-UNNAMED --add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED" />
+    </option>
+  </component>
+</project>
