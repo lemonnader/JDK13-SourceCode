@@ -217,11 +217,11 @@ public class ReentrantReadWriteLock
         implements ReadWriteLock, java.io.Serializable {
     private static final long serialVersionUID = -6992448646407690164L;
     /** Inner class providing readlock */
-    private final ReentrantReadWriteLock.ReadLock readerLock;
+    private final ReentrantReadWriteLock.ReadLock readerLock;// 读锁
     /** Inner class providing writelock */
-    private final ReentrantReadWriteLock.WriteLock writerLock;
+    private final ReentrantReadWriteLock.WriteLock writerLock;// 写锁
     /** Performs all synchronization mechanics */
-    final Sync sync;
+    final Sync sync;// 同步器
 
     /**
      * Creates a new {@code ReentrantReadWriteLock} with
@@ -229,7 +229,7 @@ public class ReentrantReadWriteLock
      */
     public ReentrantReadWriteLock() {
         this(false);
-    }
+    }// 默认构造方法
 
     /**
      * Creates a new {@code ReentrantReadWriteLock} with
@@ -237,7 +237,7 @@ public class ReentrantReadWriteLock
      *
      * @param fair {@code true} if this lock should use a fair ordering policy
      */
-    public ReentrantReadWriteLock(boolean fair) {
+    public ReentrantReadWriteLock(boolean fair) {// 是否使用公平锁的构造方法
         sync = fair ? new FairSync() : new NonfairSync();
         readerLock = new ReadLock(this);
         writerLock = new WriteLock(this);
@@ -368,14 +368,14 @@ public class ReentrantReadWriteLock
          */
         @ReservedStackAccess
         protected final boolean tryRelease(int releases) {
-            if (!isHeldExclusively())
+            if (!isHeldExclusively()) // 如果写锁不是当前线程占有着，抛出异常
                 throw new IllegalMonitorStateException();
-            int nextc = getState() - releases;
+            int nextc = getState() - releases;// 状态变量的值减1
             boolean free = exclusiveCount(nextc) == 0;
-            if (free)
+            if (free)// 是否完全释放锁
                 setExclusiveOwnerThread(null);
-            setState(nextc);
-            return free;
+            setState(nextc); // 设置状态变量的值
+            return free;// 如果完全释放了写锁，返回true
         }
 
         @ReservedStackAccess
@@ -392,18 +392,25 @@ public class ReentrantReadWriteLock
              *    and set owner.
              */
             Thread current = Thread.currentThread();
-            int c = getState();
-            int w = exclusiveCount(c);
+            int c = getState(); // 状态变量state的值
+            int w = exclusiveCount(c);// 互斥锁被获取的次数
             if (c != 0) {
+                // 如果c!=0且w==0，说明共享锁被获取的次数不为0
+                // 这句话整个的意思就是
+                // 如果共享锁被获取的次数不为0，或者被其它线程获取了互斥锁（写锁）
+                // 那么就返回false，获取写锁失败
                 // (Note: if c != 0 and w == 0 then shared count != 0)
                 if (w == 0 || current != getExclusiveOwnerThread())
                     return false;
-                if (w + exclusiveCount(acquires) > MAX_COUNT)
+                if (w + exclusiveCount(acquires) > MAX_COUNT) // 溢出检测
                     throw new Error("Maximum lock count exceeded");
                 // Reentrant acquire
-                setState(c + acquires);
-                return true;
+                setState(c + acquires);// 到这里说明当前线程已经获取过写锁，这里是重入了，直接把state加1即可
+                return true;// 获取写锁成功
             }
+            // 如果c等于0，就尝试更新state的值（非公平模式writerShouldBlock()返回false）
+            // 如果失败了，说明获取写锁失败，返回false
+            // 如果成功了，说明获取写锁成功，把自己设置为占有者，并返回true
             if (writerShouldBlock() ||
                 !compareAndSetState(c, c + acquires))
                 return false;
@@ -415,12 +422,16 @@ public class ReentrantReadWriteLock
         protected final boolean tryReleaseShared(int unused) {
             Thread current = Thread.currentThread();
             if (firstReader == current) {
+                // 如果第一个读者（读线程）是当前线程
+                // 就把它重入的次数减1
+                // 如果减到0了就把第一个读者置为空
                 // assert firstReaderHoldCount > 0;
                 if (firstReaderHoldCount == 1)
                     firstReader = null;
                 else
                     firstReaderHoldCount--;
-            } else {
+            } else {// 如果第一个读者不是当前线程
+                // 一样地，把它重入的次数减1
                 HoldCounter rh = cachedHoldCounter;
                 if (rh == null ||
                     rh.tid != LockSupport.getThreadId(current))
@@ -433,7 +444,8 @@ public class ReentrantReadWriteLock
                 }
                 --rh.count;
             }
-            for (;;) {
+            for (;;) {// 共享锁获取的次数减1
+                // 如果减为0了说明完全释放了，才返回true
                 int c = getState();
                 int nextc = c - SHARED_UNIT;
                 if (compareAndSetState(c, nextc))
@@ -467,31 +479,42 @@ public class ReentrantReadWriteLock
              *    saturated, chain to version with full retry loop.
              */
             Thread current = Thread.currentThread();
-            int c = getState();
-            if (exclusiveCount(c) != 0 &&
+            int c = getState();// 状态变量的值
+            // 在读写锁模式下，高16位存储的是共享锁（读锁）被获取的次数，低16位存储的是互斥锁（写锁）被获取的次数
+            if (exclusiveCount(c) != 0 &&// 互斥锁的次数
+                    // 如果其它线程获得了写锁，直接返回-1
                 getExclusiveOwnerThread() != current)
                 return -1;
-            int r = sharedCount(c);
+            int r = sharedCount(c);// 读锁被获取的次数
+            // 下面说明此时还没有写锁，尝试去更新state的值获取读锁
+            // 读者是否需要排队（是否是公平模式）
             if (!readerShouldBlock() &&
                 r < MAX_COUNT &&
                 compareAndSetState(c, c + SHARED_UNIT)) {
-                if (r == 0) {
+                if (r == 0) { // 获取读锁成功
+                    // 如果之前还没有线程获取读锁
+                    // 记录第一个读者为当前线程
                     firstReader = current;
-                    firstReaderHoldCount = 1;
+                    firstReaderHoldCount = 1; // 第一个读者重入的次数为1
                 } else if (firstReader == current) {
-                    firstReaderHoldCount++;
+                    firstReaderHoldCount++;// 如果有线程获取了读锁且是当前线程是第一个读者
+                    // 则把其重入次数加1
                 } else {
-                    HoldCounter rh = cachedHoldCounter;
+                    HoldCounter rh = cachedHoldCounter; // 如果有线程获取了读锁且当前线程不是第一个读者
+                    // 则从缓存中获取重入次数保存器
+                    // 如果缓存不属于当前线程
+                    // 再从ThreadLocal中获取
+                    // readHolds本身是一个ThreadLocal，里面存储的是HoldCounter
                     if (rh == null ||
-                        rh.tid != LockSupport.getThreadId(current))
+                        rh.tid != LockSupport.getThreadId(current))// get()的时候会初始化rh
                         cachedHoldCounter = rh = readHolds.get();
-                    else if (rh.count == 0)
+                    else if (rh.count == 0)// 如果rh的次数为0，把它放到ThreadLocal中去
                         readHolds.set(rh);
-                    rh.count++;
+                    rh.count++;// 重入的次数加1（初始次数为0）
                 }
-                return 1;
+                return 1;// 获取读锁成功，返回1
             }
-            return fullTryAcquireShared(current);
+            return fullTryAcquireShared(current);// 通过这个方法再去尝试获取读锁（如果之前其它线程获取了写锁，一样返回-1表示失败）
         }
 
         /**
@@ -735,7 +758,7 @@ public class ReentrantReadWriteLock
          * purposes and lies dormant until the read lock has been acquired.
          */
         public void lock() {
-            sync.acquireShared(1);
+            sync.acquireShared(1);//分为非公平和公平方式获取共享锁；失败了会排队
         }
 
         /**
@@ -894,7 +917,7 @@ public class ReentrantReadWriteLock
          * does not hold this lock
          */
         public void unlock() {
-            sync.releaseShared(1);
+            sync.releaseShared(1);// 如果尝试释放成功了，就唤醒下一个节点
         }
 
         /**
@@ -956,7 +979,8 @@ public class ReentrantReadWriteLock
          * time the write lock hold count is set to one.
          */
         public void lock() {
-            sync.acquire(1);
+            sync.acquire(1);// 先尝试获取锁
+            // 如果失败，则会进入队列中排队，后面的逻辑跟ReentrantLock一模一样了
         }
 
         /**
@@ -1144,7 +1168,8 @@ public class ReentrantReadWriteLock
          * hold this lock
          */
         public void unlock() {
-            sync.release(1);
+            sync.release(1);// 如果尝试释放锁成功（完全释放锁）
+            // 就尝试唤醒下一个节点
         }
 
         /**

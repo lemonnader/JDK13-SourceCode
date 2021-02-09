@@ -154,22 +154,22 @@ public class CyclicBarrier {
     }
 
     /** The lock for guarding barrier entry */
-    private final ReentrantLock lock = new ReentrantLock();
+    private final ReentrantLock lock = new ReentrantLock();// 重入锁
     /** Condition to wait on until tripped */
-    private final Condition trip = lock.newCondition();
+    private final Condition trip = lock.newCondition();// 条件锁，名称为trip，绊倒的意思，可能是指线程来了先绊倒，等达到一定数量了再唤醒
     /** The number of parties */
-    private final int parties;
+    private final int parties;// 需要等待的线程数量
     /** The command to run when tripped */
-    private final Runnable barrierCommand;
+    private final Runnable barrierCommand;// 当唤醒的时候执行的命令
     /** The current generation */
-    private Generation generation = new Generation();
+    private Generation generation = new Generation();// 代
 
     /**
      * Number of parties still waiting. Counts down from parties to 0
      * on each generation.  It is reset to parties on each new
      * generation or when broken.
      */
-    private int count;
+    private int count;// 当前这一代还需要等待的线程数
 
     /**
      * Updates state on barrier trip and wakes up everyone.
@@ -177,10 +177,10 @@ public class CyclicBarrier {
      */
     private void nextGeneration() {
         // signal completion of last generation
-        trip.signalAll();
+        trip.signalAll();// 调用condition的signalAll()将其队列中的等待者全部转移到AQS的队列中
         // set up next generation
-        count = parties;
-        generation = new Generation();
+        count = parties;// 重置count
+        generation = new Generation();// 进入下一代
     }
 
     /**
@@ -200,40 +200,40 @@ public class CyclicBarrier {
         throws InterruptedException, BrokenBarrierException,
                TimeoutException {
         final ReentrantLock lock = this.lock;
-        lock.lock();
+        lock.lock();// 加锁
         try {
-            final Generation g = generation;
+            final Generation g = generation;// 当前代
 
-            if (g.broken)
+            if (g.broken)// 检查
                 throw new BrokenBarrierException();
 
-            if (Thread.interrupted()) {
+            if (Thread.interrupted()) {// 中断检查
                 breakBarrier();
                 throw new InterruptedException();
             }
 
-            int index = --count;
-            if (index == 0) {  // tripped
+            int index = --count; // count的值减1
+            if (index == 0) {  // tripped// 如果数量减到0了，走这段逻辑（最后一个线程走这里）
                 Runnable command = barrierCommand;
-                if (command != null) {
+                if (command != null) {// 如果初始化的时候传了命令，这里执行
                     try {
                         command.run();
                     } catch (Throwable ex) {
                         breakBarrier();
                         throw ex;
                     }
-                }
+                }// 调用下一代方法
                 nextGeneration();
                 return 0;
             }
 
             // loop until tripped, broken, interrupted, or timed out
-            for (;;) {
+            for (;;) {// 这个循环只有非最后一个线程可以走到
                 try {
-                    if (!timed)
-                        trip.await();
+                    if (!timed)//不需要超时
+                        trip.await();// 调用condition的await()方法
                     else if (nanos > 0L)
-                        nanos = trip.awaitNanos(nanos);
+                        nanos = trip.awaitNanos(nanos);// 超时等待方法
                 } catch (InterruptedException ie) {
                     if (g == generation && ! g.broken) {
                         breakBarrier();
@@ -246,13 +246,14 @@ public class CyclicBarrier {
                     }
                 }
 
-                if (g.broken)
+                if (g.broken) // 检查
                     throw new BrokenBarrierException();
 
-                if (g != generation)
+                if (g != generation)// 正常来说这里肯定不相等
+                    // 因为上面打破栅栏的时候调用nextGeneration()方法时generation的引用已经变化了
                     return index;
 
-                if (timed && nanos <= 0L) {
+                if (timed && nanos <= 0L) { // 超时检查
                     breakBarrier();
                     throw new TimeoutException();
                 }
@@ -276,9 +277,9 @@ public class CyclicBarrier {
      */
     public CyclicBarrier(int parties, Runnable barrierAction) {
         if (parties <= 0) throw new IllegalArgumentException();
-        this.parties = parties;
-        this.count = parties;
-        this.barrierCommand = barrierAction;
+        this.parties = parties;// 初始化parties
+        this.count = parties; // 初始化count等于parties
+        this.barrierCommand = barrierAction;// 初始化都到达栅栏处执行的命令
     }
 
     /**
@@ -359,7 +360,7 @@ public class CyclicBarrier {
      */
     public int await() throws InterruptedException, BrokenBarrierException {
         try {
-            return dowait(false, 0L);
+            return dowait(false, 0L);// 调用dowait方法，不需要超时
         } catch (TimeoutException toe) {
             throw new Error(toe); // cannot happen
         }

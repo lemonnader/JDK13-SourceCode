@@ -692,7 +692,7 @@ public class Phaser {
                 if (!STATE.compareAndSet(this, s, n))
                     return (int)(state >>> PHASE_SHIFT); // terminated
                 releaseWaiters(phase);
-                return nextPhase;
+                return nextPhase;:
             }
         }
     }

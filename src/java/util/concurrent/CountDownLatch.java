@@ -164,25 +164,28 @@ public class CountDownLatch {
 
         Sync(int count) {
             setState(count);
-        }
+        } // 传入初始次数
 
         int getCount() {
             return getState();
+        } // 获取还剩的次数
+
+        @Override
+        protected int tryAcquireShared(int acquires) { // 尝试获取共享锁
+            return (getState() == 0) ? 1 : -1;// 注意，这里state等于0的时候返回的是1，也就是说count减为0的时候获取总是成功
+            // state不等于0的时候返回的是-1，也就是count不为0的时候总是要排队
         }
 
-        protected int tryAcquireShared(int acquires) {
-            return (getState() == 0) ? 1 : -1;
-        }
-
-        protected boolean tryReleaseShared(int releases) {
+        @Override
+        protected boolean tryReleaseShared(int releases) {// 尝试释放共享锁
             // Decrement count; signal when transition to zero
-            for (;;) {
-                int c = getState();
+            for (;;) {//自旋
+                int c = getState();// state的值
                 if (c == 0)
-                    return false;
-                int nextc = c - 1;
-                if (compareAndSetState(c, nextc))
-                    return nextc == 0;
+                    return false;// 等于0了，则无法再释放了
+                int nextc = c - 1;// 将count的值减1
+                if (compareAndSetState(c, nextc))// 原子更新state的值
+                    return nextc == 0;// 减为0的时候返回true，这时会唤醒后面排队的线程；否则返回false
             }
         }
     }
@@ -229,7 +232,8 @@ public class CountDownLatch {
      *         while waiting
      */
     public void await() throws InterruptedException {
-        sync.acquireSharedInterruptibly(1);
+        sync.acquireSharedInterruptibly(1);// 调用AQS的acquireSharedInterruptibly()方法
+        // 尝试获取锁，如果失败则排队
     }
 
     /**
@@ -290,7 +294,8 @@ public class CountDownLatch {
      */
     public void countDown() {
         sync.releaseShared(1);
-    }
+    }// 调用AQS的释放共享锁方法
+    // 尝试释放共享锁，如果成功了，就唤醒排队的线程
 
     /**
      * Returns the current count.

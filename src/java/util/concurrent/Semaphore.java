@@ -174,48 +174,50 @@ public class Semaphore implements java.io.Serializable {
 
         Sync(int permits) {
             setState(permits);
-        }
+        }// 构造方法，传入许可次数，放入state中
 
         final int getPermits() {
             return getState();
-        }
+        } // 获取许可次数
 
-        final int nonfairTryAcquireShared(int acquires) {
-            for (;;) {
-                int available = getState();
-                int remaining = available - acquires;
-                if (remaining < 0 ||
+        final int nonfairTryAcquireShared(int acquires) {// 非公平模式尝试获取许可
+            for (;;) {//自旋
+                int available = getState(); // 看看还有几个许可
+                int remaining = available - acquires; // 减去这次需要获取的许可还剩下几个许可
+                if (remaining < 0 ||// 如果剩余许可小于0了则直接返回
+                        // 如果剩余许可不小于0，则尝试原子更新state的值，成功了返回剩余许可
                     compareAndSetState(available, remaining))
                     return remaining;
             }
         }
 
-        protected final boolean tryReleaseShared(int releases) {
-            for (;;) {
-                int current = getState();
-                int next = current + releases;
-                if (next < current) // overflow
+        protected final boolean tryReleaseShared(int releases) { // 释放许可
+            for (;;) {//自旋
+                int current = getState();// 看看还有几个许可
+                int next = current + releases;// 加上这次释放的许可
+                if (next < current) // overflow// 检测溢出
                     throw new Error("Maximum permit count exceeded");
-                if (compareAndSetState(current, next))
+                if (compareAndSetState(current, next)) // 如果原子更新state的值成功，就说明释放许可成功，则返回true
                     return true;
             }
         }
 
-        final void reducePermits(int reductions) {
+        final void reducePermits(int reductions) {  // 减少许可
             for (;;) {
-                int current = getState();
-                int next = current - reductions;
-                if (next > current) // underflow
+                int current = getState();// 看看还有几个许可
+                int next = current - reductions;// 减去将要减少的许可
+                if (next > current) // underflow// 检测溢出
                     throw new Error("Permit count underflow");
-                if (compareAndSetState(current, next))
+                if (compareAndSetState(current, next)) // 原子更新state的值，成功了返回true
                     return;
             }
         }
 
-        final int drainPermits() {
+        final int drainPermits() { // 销毁许可
             for (;;) {
-                int current = getState();
-                if (current == 0 || compareAndSetState(current, 0))
+                int current = getState(); // 看看还有几个许可
+                if (current == 0 || compareAndSetState(current, 0)) // 如果为0，直接返回
+                    // 如果不为0，把state原子更新为0
                     return current;
             }
         }
@@ -229,9 +231,9 @@ public class Semaphore implements java.io.Serializable {
 
         NonfairSync(int permits) {
             super(permits);
-        }
+        }// 构造方法，调用父类的构造方法
 
-        protected int tryAcquireShared(int acquires) {
+        protected int tryAcquireShared(int acquires) {// 尝试获取许可，调用父类的nonfairTryAcquireShared()方法
             return nonfairTryAcquireShared(acquires);
         }
     }
@@ -244,13 +246,14 @@ public class Semaphore implements java.io.Serializable {
 
         FairSync(int permits) {
             super(permits);
-        }
+        }// 构造方法，调用父类的构造方法
 
-        protected int tryAcquireShared(int acquires) {
+        protected int tryAcquireShared(int acquires) { // 尝试获取许可
             for (;;) {
-                if (hasQueuedPredecessors())
+                if (hasQueuedPredecessors())// 公平模式需要检测是否前面有排队的
+                    // 如果有排队的直接返回失败
                     return -1;
-                int available = getState();
+                int available = getState();// 没有排队的再尝试更新state的值
                 int remaining = available - acquires;
                 if (remaining < 0 ||
                     compareAndSetState(available, remaining))
@@ -269,7 +272,7 @@ public class Semaphore implements java.io.Serializable {
      */
     public Semaphore(int permits) {
         sync = new NonfairSync(permits);
-    }
+    }// 构造方法，创建时要传入许可次数，默认使用非公平模式
 
     /**
      * Creates a {@code Semaphore} with the given number of
@@ -282,7 +285,7 @@ public class Semaphore implements java.io.Serializable {
      *        first-in first-out granting of permits under contention,
      *        else {@code false}
      */
-    public Semaphore(int permits, boolean fair) {
+    public Semaphore(int permits, boolean fair) {// 构造方法，需要传入许可次数，及是否公平模式
         sync = fair ? new FairSync(permits) : new NonfairSync(permits);
     }
 
