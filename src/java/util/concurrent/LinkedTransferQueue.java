@@ -443,10 +443,10 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
      * other accesses or CASes use simple relaxed forms.
      */
     static final class Node {
-        final boolean isData;   // false if this is a request node
-        volatile Object item;   // initially non-null if isData; CASed to match
+        final boolean isData;   // false if this is a request node// 是否是数据节点（也就标识了是生产者还是消费者）
+        volatile Object item;   // initially non-null if isData; CASed to match// 元素的值
         volatile Node next;
-        volatile Thread waiter; // null when not waiting for a match
+        volatile Thread waiter; // null when not waiting for a match// 持有元素的线程
 
         /**
          * Constructs a data node holding item if item is non-null,
@@ -643,9 +643,14 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
 
     /* Possible values for "how" argument in xfer method. */
 
+    // 放取元素的几种方式：
+// 立即返回，用于非超时的poll()和tryTransfer()方法中
     private static final int NOW   = 0; // for untimed poll, tryTransfer
+    // 异步，不会阻塞，用于放元素时，因为内部使用无界单链表存储元素，不会阻塞放元素的过程
     private static final int ASYNC = 1; // for offer, put, add
+    // 同步，调用的时候如果没有匹配到会阻塞直到匹配到为止
     private static final int SYNC  = 2; // for transfer, take
+    // 超时，用于有超时的poll()和tryTransfer()方法中
     private static final int TIMED = 3; // for timed poll, tryTransfer
 
     /**
@@ -660,19 +665,23 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
      */
     @SuppressWarnings("unchecked")
     private E xfer(E e, boolean haveData, int how, long nanos) {
-        if (haveData && (e == null))
+        if (haveData && (e == null))// 不允许放入空元素
             throw new NullPointerException();
 
-        restart: for (Node s = null, t = null, h = null;;) {
+        restart: for (Node s = null, t = null, h = null;;) {// 外层循环，自旋，失败就重试
             for (Node p = (t != (t = tail) && t.isData == haveData) ? t
-                     : (h = head);; ) {
+                     : (h = head);; ) {// 下面这个for循环用于控制匹配的过程
+                // 同一时刻队列中只会存储一种类型的节点
+                // 从头节点开始尝试匹配，如果头节点被其它线程先一步匹配了
+                // 就再尝试其下一个，直到匹配到为止，或者到队列中没有元素为止
                 final Node q; final Object item;
-                if (p.isData != haveData
-                    && haveData == ((item = p.item) == null)) {
+                if (p.isData != haveData // p节点的模式
+                    && haveData == ((item = p.item) == null)) {// p节点的值
                     if (h == null) h = head;
-                    if (p.tryMatch(item, e)) {
+                    if (p.tryMatch(item, e)) { // p没有被匹配到
                         if (h != p) skipDeadNodesNearHead(h, p);
-                        return (E) item;
+                        return (E) item; // 如果两者模式一样，则不能匹配，跳出循环后尝试入队// 如果两者模式不一样，则尝试匹配
+                        // 把p的值设置为e（如果是取元素则e是null，如果是放元素则e是元素值）
                     }
                 }
                 if ((q = p.next) == null) {
@@ -1264,7 +1273,8 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
      *
      * @throws NullPointerException if the specified element is null
      */
-    public void put(E e) {
+    public void put(E e) {// 异步模式，不会阻塞，不会超时
+        // 因为是放元素，单链表存储，会一直往后加
         xfer(e, true, ASYNC, 0);
     }
 
@@ -1317,7 +1327,7 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
      *
      * @throws NullPointerException if the specified element is null
      */
-    public boolean tryTransfer(E e) {
+    public boolean tryTransfer(E e) {// 立即返回
         return xfer(e, true, NOW, 0) == null;
     }
 
@@ -1333,7 +1343,7 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
      * @throws NullPointerException if the specified element is null
      */
     public void transfer(E e) throws InterruptedException {
-        if (xfer(e, true, SYNC, 0) != null) {
+        if (xfer(e, true, SYNC, 0) != null) {// 同步模式
             Thread.interrupted(); // failure possible only due to interrupt
             throw new InterruptedException();
         }
@@ -1354,7 +1364,7 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
      * @throws NullPointerException if the specified element is null
      */
     public boolean tryTransfer(E e, long timeout, TimeUnit unit)
-        throws InterruptedException {
+        throws InterruptedException { // 有超时时间
         if (xfer(e, true, TIMED, unit.toNanos(timeout)) == null)
             return true;
         if (!Thread.interrupted())
@@ -1362,14 +1372,14 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
         throw new InterruptedException();
     }
 
-    public E take() throws InterruptedException {
+    public E take() throws InterruptedException {// 同步模式，会阻塞直到取到元素
         E e = xfer(null, false, SYNC, 0);
         if (e != null)
             return e;
         Thread.interrupted();
         throw new InterruptedException();
     }
-
+    // 有超时时间
     public E poll(long timeout, TimeUnit unit) throws InterruptedException {
         E e = xfer(null, false, TIMED, unit.toNanos(timeout));
         if (e != null || !Thread.interrupted())
@@ -1377,7 +1387,7 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
         throw new InterruptedException();
     }
 
-    public E poll() {
+    public E poll() {// 立即返回，没取到元素返回null
         return xfer(null, false, NOW, 0);
     }
 
