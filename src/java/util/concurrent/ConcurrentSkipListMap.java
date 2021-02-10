@@ -356,7 +356,7 @@ public class ConcurrentSkipListMap<K,V> extends AbstractMap<K,V>
      * marker nodes have null keys. The val field (but currently not
      * the key field) is nulled out upon deletion.
      */
-    static final class Node<K,V> {
+    static final class Node<K,V> {// 数据节点，典型的单链表结构
         final K key; // currently, never detached
         V val;
         Node<K,V> next;
@@ -370,7 +370,7 @@ public class ConcurrentSkipListMap<K,V> extends AbstractMap<K,V>
     /**
      * Index nodes represent the levels of the skip list.
      */
-    static final class Index<K,V> {
+    static final class Index<K,V> {// 索引节点，存储着对应的node值，及向下和向右的索引指针
         final Node<K,V> node;  // currently, never detached
         final Index<K,V> down;
         Index<K,V> right;
@@ -596,6 +596,9 @@ public class ConcurrentSkipListMap<K,V> extends AbstractMap<K,V>
         if (key == null)
             throw new NullPointerException();
         Comparator<? super K> cmp = comparator;
+        // Part I：找到目标节点的位置并插入
+        // 这里的目标节点是数据节点，也就是最底层的那条链
+        // 自旋
         for (;;) {
             Index<K,V> h; Node<K,V> b;
             VarHandle.acquireFence();
@@ -1341,9 +1344,10 @@ public class ConcurrentSkipListMap<K,V> extends AbstractMap<K,V>
      * @throws NullPointerException if the specified key or value is null
      */
     public V put(K key, V value) {
-        if (value == null)
+        if (value == null)// 不能存储value为null的元素
+            // 因为value为null标记该元素被删除（后面会看到）
             throw new NullPointerException();
-        return doPut(key, value, false);
+        return doPut(key, value, false);// 调用doPut()方法添加元素
     }
 
     /**

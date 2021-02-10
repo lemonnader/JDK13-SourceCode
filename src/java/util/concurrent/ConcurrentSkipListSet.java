@@ -92,7 +92,7 @@ import java.util.Spliterator;
  * @param <E> the type of elements maintained by this set
  * @since 1.6
  */
-public class ConcurrentSkipListSet<E>
+public class ConcurrentSkipListSet<E>// 实现了NavigableSet接口，并没有所谓的ConcurrentNavigableSet接口
     extends AbstractSet<E>
     implements NavigableSet<E>, Cloneable, java.io.Serializable {
 
@@ -103,13 +103,13 @@ public class ConcurrentSkipListSet<E>
      * element.  This field is declared final for the sake of thread
      * safety, which entails some ugliness in clone().
      */
-    private final ConcurrentNavigableMap<E,Object> m;
+    private final ConcurrentNavigableMap<E,Object> m;// 存储使用的map
 
     /**
      * Constructs a new, empty set that orders its elements according to
      * their {@linkplain Comparable natural ordering}.
      */
-    public ConcurrentSkipListSet() {
+    public ConcurrentSkipListSet() {// 初始化
         m = new ConcurrentSkipListMap<E,Object>();
     }
 
@@ -121,7 +121,7 @@ public class ConcurrentSkipListSet<E>
      *        If {@code null}, the {@linkplain Comparable natural
      *        ordering} of the elements will be used.
      */
-    public ConcurrentSkipListSet(Comparator<? super E> comparator) {
+    public ConcurrentSkipListSet(Comparator<? super E> comparator) {// 传入比较器
         m = new ConcurrentSkipListMap<E,Object>(comparator);
     }
 
@@ -136,7 +136,8 @@ public class ConcurrentSkipListSet<E>
      * @throws NullPointerException if the specified collection or any
      *         of its elements are null
      */
-    public ConcurrentSkipListSet(Collection<? extends E> c) {
+    public ConcurrentSkipListSet(Collection<? extends E> c) { // 使用ConcurrentSkipListMap初始化map
+        // 并将集合c中所有元素放入到map中
         m = new ConcurrentSkipListMap<E,Object>();
         addAll(c);
     }
@@ -149,7 +150,8 @@ public class ConcurrentSkipListSet<E>
      * @throws NullPointerException if the specified sorted set or any
      *         of its elements are null
      */
-    public ConcurrentSkipListSet(SortedSet<E> s) {
+    public ConcurrentSkipListSet(SortedSet<E> s) {// 使用ConcurrentSkipListMap初始化map
+        // 并将有序Set中所有元素放入到map中
         m = new ConcurrentSkipListMap<E,Object>(s.comparator());
         addAll(s);
     }

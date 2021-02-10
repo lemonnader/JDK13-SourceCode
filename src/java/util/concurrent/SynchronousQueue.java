@@ -195,7 +195,7 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
      * seems not to vary with number of CPUs (beyond 2) so is just
      * a constant.
      */
-    static final int MAX_TIMED_SPINS =
+    static final int MAX_TIMED_SPINS =// 有超时的情况自旋多少次，当CPU数量小于2的时候不自旋
         (Runtime.getRuntime().availableProcessors() < 2) ? 0 : 32;
 
     /**
@@ -203,16 +203,16 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
      * This is greater than timed value because untimed waits spin
      * faster since they don't need to check times on each spin.
      */
-    static final int MAX_UNTIMED_SPINS = MAX_TIMED_SPINS * 16;
+    static final int MAX_UNTIMED_SPINS = MAX_TIMED_SPINS * 16;// 没有超时的情况自旋多少次
 
     /**
      * The number of nanoseconds for which it is faster to spin
      * rather than to use timed park. A rough estimate suffices.
      */
-    static final long SPIN_FOR_TIMEOUT_THRESHOLD = 1000L;
+    static final long SPIN_FOR_TIMEOUT_THRESHOLD = 1000L;// 针对有超时的情况，自旋了多少次后，如果剩余时间大于1000纳秒就使用带时间的LockSupport.parkNanos()这个方法
 
     /** Dual stack */
-    static final class TransferStack<E> extends Transferer<E> {
+    static final class TransferStack<E> extends Transferer<E> {// 以栈方式实现的Transferer
         /*
          * This extends Scherer-Scott dual stack algorithm, differing,
          * among other ways, by using "covering" nodes rather than
@@ -223,22 +223,24 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
 
         /* Modes for SNodes, ORed together in node fields */
         /** Node represents an unfulfilled consumer */
+        // 栈中节点的几种类型：
+        // 1. 消费者（请求数据的）
         static final int REQUEST    = 0;
         /** Node represents an unfulfilled producer */
-        static final int DATA       = 1;
+        static final int DATA       = 1; // 2. 生产者（提供数据的）
         /** Node is fulfilling another unfulfilled DATA or REQUEST */
-        static final int FULFILLING = 2;
+        static final int FULFILLING = 2;// 3. 二者正在匹配中
 
         /** Returns true if m has fulfilling bit set. */
         static boolean isFulfilling(int m) { return (m & FULFILLING) != 0; }
 
         /** Node class for TransferStacks. */
-        static final class SNode {
+        static final class SNode {  // 栈中的节点
             volatile SNode next;        // next node in stack
             volatile SNode match;       // the node matched to this
             volatile Thread waiter;     // to control park/unpark
             Object item;                // data; or null for REQUESTs
-            int mode;
+            int mode;// 模式，也就是节点的类型，是消费者，是生产者，还是正在匹配中
             // Note: item and mode fields don't need to be volatile
             // since they are always written before, and read after,
             // other volatile/atomic operations.
@@ -347,55 +349,77 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
              */
 
             SNode s = null; // constructed/reused as needed
-            int mode = (e == null) ? REQUEST : DATA;
+            int mode = (e == null) ? REQUEST : DATA;// 根据e是否为null决定是生产者还是消费者
 
-            for (;;) {
-                SNode h = head;
+            for (;;) {// 自旋+CAS，熟悉的套路，熟悉的味道
+                SNode h = head;// 栈顶元素
+                // 栈顶没有元素，或者栈顶元素跟当前元素是一个模式的
+                // 也就是都是生产者节点或者都是消费者节点
                 if (h == null || h.mode == mode) {  // empty or same-mode
-                    if (timed && nanos <= 0L) {     // can't wait
-                        if (h != null && h.isCancelled())
-                            casHead(h, h.next);     // pop cancelled node
+                    if (timed && nanos <= 0L) {     // can't wait// 如果有超时而且已到期
+                        if (h != null && h.isCancelled()) // 如果头节点不为空且是取消状态
+                            casHead(h, h.next);     // pop cancelled node// 就把头节点弹出，并进入下一次循环
                         else
-                            return null;
-                    } else if (casHead(h, s = snode(s, e, h, mode))) {
+                            return null; // 否则，直接返回null（超时返回null）
+                    } else if (casHead(h, s = snode(s, e, h, mode))) {// 入栈成功（因为是模式相同的，所以只能入栈）
+                        // 调用awaitFulfill()方法自旋+阻塞当前入栈的线程并等待被匹配到
                         SNode m = awaitFulfill(s, timed, nanos);
                         if (m == s) {               // wait was cancelled
+                            // 如果m等于s，说明取消了，那么就把它清除掉，并返回null
                             clean(s);
-                            return null;
+                            return null; // 被取消了返回null
                         }
+                        // 到这里说明匹配到元素了
+                        // 因为从awaitFulfill()里面出来要不被取消了要不就匹配到了
+
+                        // 如果头节点不为空，并且头节点的下一个节点是s
+                        // 就把头节点换成s的下一个节点
+                        // 也就是把h和s都弹出了
+                        // 也就是把栈顶两个元素都弹出了
                         if ((h = head) != null && h.next == s)
                             casHead(h, s.next);     // help s's fulfiller
-                        return (E) ((mode == REQUEST) ? m.item : s.item);
+                        return (E) ((mode == REQUEST) ? m.item : s.item);// 根据当前节点的模式判断返回m还是s中的值
                     }
                 } else if (!isFulfilling(h.mode)) { // try to fulfill
+                    // 到这里说明头节点和当前节点模式不一样
+                    // 如果头节点不是正在匹配中
+
+                    // 如果头节点已经取消了，就把它弹出栈
                     if (h.isCancelled())            // already cancelled
                         casHead(h, h.next);         // pop and retry
                     else if (casHead(h, s=snode(s, e, h, FULFILLING|mode))) {
+                        // 头节点没有在匹配中，就让当前节点先入队，再让他们尝试匹配
+                        // 且s成为了新的头节点，它的状态是正在匹配中
                         for (;;) { // loop until matched or waiters disappear
                             SNode m = s.next;       // m is s's match
                             if (m == null) {        // all waiters are gone
+                                // 如果m为null，说明除了s节点外的节点都被其它线程先一步匹配掉了
+                                // 就清空栈并跳出内部循环，到外部循环再重新入栈判断
                                 casHead(s, null);   // pop fulfill node
                                 s = null;           // use new node next time
                                 break;              // restart main loop
                             }
                             SNode mn = m.next;
-                            if (m.tryMatch(s)) {
+                            if (m.tryMatch(s)) {// 如果m和s尝试匹配成功，就弹出栈顶的两个元素m和s
                                 casHead(s, mn);     // pop both s and m
-                                return (E) ((mode == REQUEST) ? m.item : s.item);
+                                return (E) ((mode == REQUEST) ? m.item : s.item);// 返回匹配结果
                             } else                  // lost match
-                                s.casNext(m, mn);   // help unlink
+                                s.casNext(m, mn);   // help unlink// 尝试匹配失败，说明m已经先一步被其它线程匹配了
+                            // 就协助清除它
                         }
                     }
                 } else {                            // help a fulfiller
-                    SNode m = h.next;               // m is h's match
+                    SNode m = h.next;               // m is h's match// 到这里说明当前节点和头节点模式不一样
+                    // 且头节点是正在匹配中
                     if (m == null)                  // waiter is gone
-                        casHead(h, null);           // pop fulfilling node
+                        casHead(h, null);           // pop fulfilling node // 如果m为null，说明m已经被其它线程先一步匹配了
                     else {
-                        SNode mn = m.next;
+                        SNode mn = m.next;// 协助匹配，如果m和s尝试匹配成功，就弹出栈顶的两个元素m和s
                         if (m.tryMatch(h))          // help match
-                            casHead(h, mn);         // pop both h and m
+                            casHead(h, mn);         // pop both h and m// 将栈顶的两个元素弹出后，再让s重新入栈
                         else                        // lost match
-                            h.casNext(m, mn);       // help unlink
+                            h.casNext(m, mn);       // help unlink// 尝试匹配失败，说明m已经先一步被其它线程匹配了
+                        // 就协助清除它
                     }
                 }
             }
@@ -409,7 +433,7 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
          * @param nanos timeout value
          * @return matched node, or s if cancelled
          */
-        SNode awaitFulfill(SNode s, boolean timed, long nanos) {
+        SNode awaitFulfill(SNode s, boolean timed, long nanos) {// 三个参数：需要等待的节点，是否需要超时，超时时间
             /*
              * When a node/thread is about to block, it sets its waiter
              * field and then rechecks state at least one more time
@@ -432,33 +456,34 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
              * and don't wait at all, so are trapped in transfer
              * method rather than calling awaitFulfill.
              */
-            final long deadline = timed ? System.nanoTime() + nanos : 0L;
-            Thread w = Thread.currentThread();
-            int spins = shouldSpin(s)
+            final long deadline = timed ? System.nanoTime() + nanos : 0L;// 到期时间
+            Thread w = Thread.currentThread(); // 当前线程
+            int spins = shouldSpin(s)// 自旋次数
                 ? (timed ? MAX_TIMED_SPINS : MAX_UNTIMED_SPINS)
                 : 0;
             for (;;) {
-                if (w.isInterrupted())
+                if (w.isInterrupted()) // 当前线程中断了，尝试清除s
                     s.tryCancel();
                 SNode m = s.match;
-                if (m != null)
-                    return m;
-                if (timed) {
-                    nanos = deadline - System.nanoTime();
+                if (m != null) // 检查s是否匹配到了元素m（有可能是其它线程的m匹配到当前线程的s）
+                    return m;// 如果匹配到了，直接返回m
+                if (timed) { // 如果需要超时
+                    nanos = deadline - System.nanoTime();// 检查超时时间如果小于0了，尝试清除s
                     if (nanos <= 0L) {
                         s.tryCancel();
                         continue;
                     }
                 }
-                if (spins > 0) {
+                if (spins > 0) {// 如果还有自旋次数，自旋次数减一，并进入下一次自旋
                     Thread.onSpinWait();
                     spins = shouldSpin(s) ? (spins - 1) : 0;
                 }
-                else if (s.waiter == null)
+                else if (s.waiter == null)// 后面的elseif都是自旋次数没有了
+                    // 如果s的waiter为null，把当前线程注入进去，并进入下一次自旋
                     s.waiter = w; // establish waiter so can park next iter
-                else if (!timed)
+                else if (!timed) // 如果不允许超时，直接阻塞，并等待被其它线程唤醒，唤醒后继续自旋并查看是否匹配到了元素
                     LockSupport.park(this);
-                else if (nanos > SPIN_FOR_TIMEOUT_THRESHOLD)
+                else if (nanos > SPIN_FOR_TIMEOUT_THRESHOLD)// 如果允许超时且还有剩余时间，就阻塞相应时间
                     LockSupport.parkNanos(this, nanos);
             }
         }
@@ -858,6 +883,7 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
      *        access; otherwise the order is unspecified.
      */
     public SynchronousQueue(boolean fair) {
+        // 如果是公平模式就使用队列，如果是非公平模式就使用栈
         transferer = fair ? new TransferQueue<E>() : new TransferStack<E>();
     }
 
@@ -869,9 +895,10 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
      * @throws NullPointerException {@inheritDoc}
      */
     public void put(E e) throws InterruptedException {
-        if (e == null) throw new NullPointerException();
-        if (transferer.transfer(e, false, 0) == null) {
-            Thread.interrupted();
+        if (e == null) throw new NullPointerException();// 元素不可为空
+        if (transferer.transfer(e, false, 0) == null) {// 直接调用传输器的transfer()方法
+            // 三个参数分别是：传输的元素，是否需要超时，超时的时间
+            Thread.interrupted();// 如果传输失败，直接让线程中断并抛出中断异常
             throw new InterruptedException();
         }
     }
@@ -917,10 +944,12 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
      * @throws InterruptedException {@inheritDoc}
      */
     public E take() throws InterruptedException {
-        E e = transferer.transfer(null, false, 0);
+        E e = transferer.transfer(null, false, 0); // 直接调用传输器的transfer()方法
+        // 三个参数分别是：null，是否需要超时，超时的时间
+        // 第一个参数为null表示是消费者，要取元素
         if (e != null)
-            return e;
-        Thread.interrupted();
+            return e;// 如果取到了元素就返回
+        Thread.interrupted();// 否则让线程中断并抛出中断异常
         throw new InterruptedException();
     }
 
