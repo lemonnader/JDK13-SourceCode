@@ -2,7 +2,7 @@
 <project version="4">
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
-      <module name="JDK13_SourceCode" options="--add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED,ALL-UNNAMED,ALL-UNNAMED --add-exports java.base/jdk.internal.misc=ALL-UNNAMED,ALL-UNNAMED" />
+      <module name="JDK13_SourceCode" options="--add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED,ALL-UNNAMED,ALL-UNNAMED --add-exports java.base/jdk.internal.misc=ALL-UNNAMED,ALL-UNNAMED --add-exports java.base/jdk.internal.util=ALL-UNNAMED --add-exports java.base/jdk.internal.access=ALL-UNNAMED" />
     </option>
   </component>
 </project>
